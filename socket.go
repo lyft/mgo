@@ -530,6 +530,28 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	return err
 }
 
+func (socket *mongoSocket) WriteRaw(b []byte) (n int, err error) {
+	socket.Lock()
+	if socket.dead != nil {
+		dead := socket.dead
+		socket.Unlock()
+		debugf("Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.Error())
+		// XXX This seems necessary in case the session is closed concurrently
+		// with a query being performed, but it's not yet tested:
+		return 0, dead
+	}
+
+	// wasWaiting := len(socket.replyFuncs) > 0
+	socket.updateDeadline(writeDeadline)
+	n, err = socket.conn.Write(b)
+	// if !wasWaiting && requestCount > 0 {
+	// if !wasWaiting {
+	socket.updateDeadline(readDeadline)
+	// }
+	socket.Unlock()
+	return n, err
+}
+
 func fill(r net.Conn, b []byte) error {
 	l := len(b)
 	n, err := r.Read(b)

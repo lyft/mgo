@@ -3171,6 +3171,35 @@ type getMoreCmd struct {
 	MaxTimeMS  int64  `bson:"maxTimeMS,omitempty"`
 }
 
+// RawWriteCallback is a function for socket responses
+type RawWriteCallback func(err error, docNum int, docData []byte)
+
+// WriteRawBinary writes raw BSON into session.
+// Returns a number of documents written, or an error if it fails.
+//
+// Responses are asynchronous and passed in the `response` function
+func (s *Session) WriteRawBinary(id uint32, b []byte, response RawWriteCallback) (int, error) {
+
+	socket, e := s.acquireSocket(false)
+	if e != nil {
+		panic("WAAAT")
+	}
+	defer socket.Release()
+
+	// Since socket reading is non blocking, we assign a callback function where
+	// response will be called.
+	socket.Lock()
+	socket.replyFuncs[id] = func(err error, reply *replyOp, docNum int, docData []byte) {
+		response(err, docNum, docData)
+	}
+	socket.Unlock()
+
+	// Write BSON into socket. This is blocking
+	nDocsWritten, err := socket.WriteRaw(b)
+
+	return nDocsWritten, err
+}
+
 // run duplicates the behavior of collection.Find(query).One(&result)
 // as performed by Database.Run, specializing the logic for running
 // database commands on a given socket.
