@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lyft/mgo"
+	"github.com/lyft/mgo/bson"
+	"github.com/lyft/mgo/txn"
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
-	"gopkg.in/mgo.v2/txn"
 )
 
 func TestAll(t *testing.T) {
