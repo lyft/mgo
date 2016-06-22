@@ -91,6 +91,7 @@ type Session struct {
 	creds            []Credential
 	poolLimit        int
 	bypassValidation bool
+	maxSocketRelease int
 }
 
 type Database struct {
@@ -1747,6 +1748,13 @@ func (s *Session) SetPrefetch(p float64) {
 	s.m.Lock()
 	s.queryConfig.prefetch = p
 	s.m.Unlock()
+}
+
+// Sets the maximum number of times a Socket created from this session can be released
+// to the connection pool before being closed.  This helps mongo proxies perform load
+// balancing
+func (s *Session) SetMaxSocketRelease(maxSocketRelease int) {
+	s.maxSocketRelease = maxSocketRelease
 }
 
 // See SetSafe for details on the Safe type.
@@ -3778,7 +3786,7 @@ func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 		sockTimeout := iter.session.sockTimeout
 		iter.session.m.Unlock()
 		socket.Release()
-		socket, _, err = iter.server.AcquireSocket(0, sockTimeout)
+		socket, _, err = iter.server.AcquireSocket(0, sockTimeout, iter.session.maxSocketRelease)
 		if err != nil {
 			return nil, err
 		}
@@ -4334,7 +4342,7 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Still not good.  We need a new socket.
-	sock, err := s.cluster().AcquireSocket(s.consistency, slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit)
+	sock, err := s.cluster().AcquireSocket(s.consistency, slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit, s.maxSocketRelease)
 	if err != nil {
 		return nil, err
 	}

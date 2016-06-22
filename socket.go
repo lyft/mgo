@@ -53,6 +53,8 @@ type mongoSocket struct {
 	gotNonce      sync.Cond
 	dead          error
 	serverInfo    *mongoServerInfo
+	// The number of times this socket can be released to the connection pool before being closed
+	releaseCount  int
 }
 
 type queryOpFlags uint32
@@ -177,12 +179,13 @@ type requestInfo struct {
 	replyFunc replyFunc
 }
 
-func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration) *mongoSocket {
+func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration, releaseCount int) *mongoSocket {
 	socket := &mongoSocket{
 		conn:       conn,
 		addr:       server.Addr,
 		server:     server,
 		replyFuncs: make(map[uint32]replyFunc),
+		releaseCount: releaseCount,
 	}
 	socket.gotNonce.L = &socket.Mutex
 	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {
@@ -264,10 +267,15 @@ func (socket *mongoSocket) Release() {
 	if socket.references == 0 {
 		stats.socketsInUse(-1)
 		server := socket.server
+		socket.releaseCount--
+		release := false
+		if socket.releaseCount <= 0 {
+			release = true
+		}
 		socket.Unlock()
 		socket.LogoutAll()
 		// If the socket is dead server is nil.
-		if server != nil {
+		if server != nil && release {
 			server.RecycleSocket(socket)
 		}
 	} else {

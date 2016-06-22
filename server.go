@@ -28,6 +28,8 @@ package mgo
 
 import (
 	"errors"
+	"math"
+	"math/rand"
 	"net"
 	"sort"
 	"sync"
@@ -101,7 +103,7 @@ var errServerClosed = errors.New("server was closed")
 // If the poolLimit argument is greater than zero and the number of sockets in
 // use in this server is greater than the provided limit, errPoolLimit is
 // returned.
-func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
+func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration, releaseCount int) (socket *mongoSocket, abended bool, err error) {
 	for {
 		server.Lock()
 		abended = server.abended
@@ -115,7 +117,9 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			return nil, false, errPoolLimit
 		}
 		if n > 0 {
-			socket = server.unusedSockets[n-1]
+			i := rand.Intn(len(server.unusedSockets))
+			socket = server.unusedSockets[i]
+			server.unusedSockets[i] = server.unusedSockets[n-1]
 			server.unusedSockets[n-1] = nil // Help GC.
 			server.unusedSockets = server.unusedSockets[:n-1]
 			info := server.info
@@ -126,7 +130,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			}
 		} else {
 			server.Unlock()
-			socket, err = server.Connect(timeout)
+			socket, err = server.Connect(timeout, releaseCount)
 			if err == nil {
 				server.Lock()
 				// We've waited for the Connect, see if we got
@@ -148,7 +152,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 
 // Connect establishes a new connection to the server. This should
 // generally be done through server.AcquireSocket().
-func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) {
+func (server *mongoServer) Connect(timeout time.Duration, releaseCount int) (*mongoSocket, error) {
 	server.RLock()
 	master := server.info.Master
 	dial := server.dial
@@ -181,7 +185,7 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)
-	return newSocket(server, conn, timeout), nil
+	return newSocket(server, conn, timeout, releaseCount), nil
 }
 
 // Close forces closing all sockets that are alive, whether
@@ -301,7 +305,7 @@ func (server *mongoServer) pinger(loop bool) {
 			time.Sleep(delay)
 		}
 		op := op
-		socket, _, err := server.AcquireSocket(0, delay)
+		socket, _, err := server.AcquireSocket(0, delay, math.MaxInt32)
 		if err == nil {
 			start := time.Now()
 			_, _ = socket.SimpleQuery(&op)
