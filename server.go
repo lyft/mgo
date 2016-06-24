@@ -55,6 +55,7 @@ type mongoServer struct {
 	pingCount     uint32
 	pingWindow    [6]time.Duration
 	info          *mongoServerInfo
+	maxSocketUses int
 }
 
 type dialer struct {
@@ -76,15 +77,16 @@ type mongoServerInfo struct {
 
 var defaultServerInfo mongoServerInfo
 
-func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer) *mongoServer {
+func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer, maxSocketUses int) *mongoServer {
 	server := &mongoServer{
-		Addr:         addr,
-		ResolvedAddr: tcpaddr.String(),
-		tcpaddr:      tcpaddr,
-		sync:         sync,
-		dial:         dial,
-		info:         &defaultServerInfo,
-		pingValue:    time.Hour, // Push it back before an actual ping.
+		Addr:          addr,
+		ResolvedAddr:  tcpaddr.String(),
+		tcpaddr:       tcpaddr,
+		sync:          sync,
+		dial:          dial,
+		info:          &defaultServerInfo,
+		pingValue:     time.Hour, // Push it back before an actual ping.
+		maxSocketUses: maxSocketUses,
 	}
 	go server.pinger(true)
 	return server
@@ -101,7 +103,7 @@ var errServerClosed = errors.New("server was closed")
 // If the poolLimit argument is greater than zero and the number of sockets in
 // use in this server is greater than the provided limit, errPoolLimit is
 // returned.
-func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
+func (server *mongoServer) AcquireSocket(poolLimit, minPoolLimit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
 	for {
 		server.Lock()
 		abended = server.abended
@@ -114,10 +116,10 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			server.Unlock()
 			return nil, false, errPoolLimit
 		}
-		if n > 0 {
-			socket = server.unusedSockets[n-1]
-			server.unusedSockets[n-1] = nil // Help GC.
-			server.unusedSockets = server.unusedSockets[:n-1]
+		if n > 0 && len(server.liveSockets) >= minPoolLimit {
+			socket = server.unusedSockets[0]
+			server.unusedSockets[0] = nil // Help GC.
+			server.unusedSockets = server.unusedSockets[1:]
 			info := server.info
 			server.Unlock()
 			err = socket.InitialAcquire(info, timeout)
@@ -181,7 +183,7 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)
-	return newSocket(server, conn, timeout), nil
+	return newSocket(server, conn, timeout, server.maxSocketUses), nil
 }
 
 // Close forces closing all sockets that are alive, whether
@@ -301,7 +303,7 @@ func (server *mongoServer) pinger(loop bool) {
 			time.Sleep(delay)
 		}
 		op := op
-		socket, _, err := server.AcquireSocket(0, delay)
+		socket, _, err := server.AcquireSocket(0, 0, delay)
 		if err == nil {
 			start := time.Now()
 			_, _ = socket.SimpleQuery(&op)
