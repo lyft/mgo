@@ -278,6 +278,8 @@ func (socket *mongoSocket) Release() {
 		// If the socket is dead server is nil.
 		if server != nil && recycle {
 			server.RecycleSocket(socket)
+		} else {
+			socket.Close()
 		}
 	} else {
 		socket.Unlock()
