@@ -27,6 +27,7 @@
 package mgo
 
 import (
+	"container/list"
 	"errors"
 	"net"
 	"sort"
@@ -44,7 +45,7 @@ type mongoServer struct {
 	Addr          string
 	ResolvedAddr  string
 	tcpaddr       *net.TCPAddr
-	unusedSockets []*mongoSocket
+	unusedSockets *list.List
 	liveSockets   []*mongoSocket
 	closed        bool
 	abended       bool
@@ -82,6 +83,7 @@ func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer, m
 		Addr:          addr,
 		ResolvedAddr:  tcpaddr.String(),
 		tcpaddr:       tcpaddr,
+		unusedSockets: list.New(),
 		sync:          sync,
 		dial:          dial,
 		info:          &defaultServerInfo,
@@ -111,15 +113,13 @@ func (server *mongoServer) AcquireSocket(poolLimit, minPoolLimit int, timeout ti
 			server.Unlock()
 			return nil, abended, errServerClosed
 		}
-		n := len(server.unusedSockets)
+		n := server.unusedSockets.Len()
 		if poolLimit > 0 && len(server.liveSockets)-n >= poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		}
 		if n > 0 && len(server.liveSockets) >= minPoolLimit {
-			socket = server.unusedSockets[0]
-			server.unusedSockets[0] = nil // Help GC.
-			server.unusedSockets = server.unusedSockets[1:]
+			socket = server.unusedSockets.Remove(server.unusedSockets.Front()).(*mongoSocket)
 			info := server.info
 			server.Unlock()
 			err = socket.InitialAcquire(info, timeout)
@@ -192,7 +192,6 @@ func (server *mongoServer) Close() {
 	server.Lock()
 	server.closed = true
 	liveSockets := server.liveSockets
-	unusedSockets := server.unusedSockets
 	server.liveSockets = nil
 	server.unusedSockets = nil
 	server.Unlock()
@@ -201,16 +200,13 @@ func (server *mongoServer) Close() {
 		s.Close()
 		liveSockets[i] = nil
 	}
-	for i := range unusedSockets {
-		unusedSockets[i] = nil
-	}
 }
 
 // RecycleSocket puts socket back into the unused cache.
 func (server *mongoServer) RecycleSocket(socket *mongoSocket) {
 	server.Lock()
 	if !server.closed {
-		server.unusedSockets = append(server.unusedSockets, socket)
+		server.unusedSockets.PushBack(socket)
 	}
 	server.Unlock()
 }
@@ -228,6 +224,15 @@ func removeSocket(sockets []*mongoSocket, socket *mongoSocket) []*mongoSocket {
 	return sockets
 }
 
+func removeSocketFromList(l *list.List, socket *mongoSocket) {
+	for e := l.Front(); e != nil; e = e.Next() {
+		if e.Value == socket {
+			l.Remove(e)
+			break
+		}
+	}
+}
+
 // AbendSocket notifies the server that the given socket has terminated
 // abnormally, and thus should be discarded rather than cached.
 func (server *mongoServer) AbendSocket(socket *mongoSocket) {
@@ -238,7 +243,7 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 		return
 	}
 	server.liveSockets = removeSocket(server.liveSockets, socket)
-	server.unusedSockets = removeSocket(server.unusedSockets, socket)
+	removeSocketFromList(server.unusedSockets, socket)
 	server.Unlock()
 	// Maybe just a timeout, but suggest a cluster sync up just in case.
 	select {
@@ -429,7 +434,7 @@ func (servers *mongoServers) BestFit(mode Mode, serverTags []bson.D) *mongoServe
 		case absDuration(next.pingValue-best.pingValue) > 15*time.Millisecond:
 			// Prefer nearest server.
 			swap = next.pingValue < best.pingValue
-		case len(next.liveSockets)-len(next.unusedSockets) < len(best.liveSockets)-len(best.unusedSockets):
+		case len(next.liveSockets)-next.unusedSockets.Len() < len(best.liveSockets)-best.unusedSockets.Len():
 			// Prefer servers with less connections.
 			swap = true
 		}
