@@ -52,7 +52,6 @@ type mongoCluster struct {
 	dynaSeeds     []string
 	servers       mongoServers
 	masters       mongoServers
-	mongoS        bool
 	references    int
 	syncing       bool
 	direct        bool
@@ -151,7 +150,6 @@ func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResul
 	session.Close()
 	return err
 }
-
 
 type possibleTimeout interface {
 	Timeout() bool
@@ -256,15 +254,6 @@ const (
 	completeSync syncKind = true
 	partialSync  syncKind = false
 )
-
-func (cluster *mongoCluster) hasMongoS() bool {
-	for _, master := range cluster.masters.slice {
-		if master.info.Mongos {
-			return true
-		}
-	}
-	return false
-}
 
 func (cluster *mongoCluster) addServer(server *mongoServer, info *mongoServerInfo, syncKind syncKind) {
 	cluster.Lock()
@@ -601,7 +590,10 @@ func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout 
 			mastersLen := cluster.masters.Len()
 			slavesLen := cluster.servers.Len() - mastersLen
 			debugf("Cluster has %d known masters and %d known slaves.", mastersLen, slavesLen)
-			if cluster.hasMongoS() || (!(slaveOk && mode == Secondary) && mastersLen > 0 || slaveOk && slavesLen > 0) {
+			if mastersLen > 0 && !(slaveOk && mode == Secondary) || slavesLen > 0 && slaveOk {
+				break
+			}
+			if mastersLen > 0 && mode == Secondary && cluster.masters.HasMongos() {
 				break
 			}
 			if started.IsZero() {
