@@ -601,7 +601,7 @@ func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout 
 			mastersLen := cluster.masters.Len()
 			slavesLen := cluster.servers.Len() - mastersLen
 			debugf("Cluster has %d known masters and %d known slaves.", mastersLen, slavesLen)
-			if cluster.HasMongoS() || (!(slaveOk && mode == Secondary) && mastersLen > 0 || slaveOk && slavesLen > 0) {
+			if cluster.hasMongoS() || (!(slaveOk && mode == Secondary) && mastersLen > 0 || slaveOk && slavesLen > 0) {
 				break
 			}
 			if started.IsZero() {
