@@ -290,6 +290,7 @@ func ParseURL(url string) (*DialInfo, error) {
 	setName := ""
 	poolLimit := 0
 	maxSocketUses := 0
+	maxSocketReuseTimeSecs := 0
 	for k, v := range uinfo.options {
 		switch k {
 		case "authSource":
@@ -309,6 +310,11 @@ func ParseURL(url string) (*DialInfo, error) {
 			maxSocketUses, err = strconv.Atoi(v)
 			if err != nil {
 				return nil, errors.New("bad value for maxSocketUses: " + v)
+			}
+		case "maxSocketReuseTimeSecs":
+			maxSocketReuseTimeSecs, err = strconv.Atoi(v)
+			if err != nil {
+				return nil, errors.New("bad value for maxSocketReuseTime: " + v)
 			}
 		case "connect":
 			if v == "direct" {
@@ -335,6 +341,7 @@ func ParseURL(url string) (*DialInfo, error) {
 		PoolLimit:      poolLimit,
 		MaxSocketUses:  maxSocketUses,
 		ReplicaSetName: setName,
+		MaxSocketReuseTime: time.Duration(maxSocketReuseTimeSecs),
 	}
 	return &info, nil
 }
@@ -409,6 +416,10 @@ type DialInfo struct {
 	// Default: -1
 	MaxSocketUses int
 
+	// Max time for a socket before it can no longer be reused. Set 0 to disable
+	// Default: 0
+	MaxSocketReuseTime time.Duration
+
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
 	DialServer func(addr *ServerAddr) (net.Conn, error)
@@ -448,7 +459,7 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		addrs[i] = addr
 	}
 	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer}, info.ReplicaSetName,
-		info.MaxSocketUses)
+		info.MaxSocketUses, info.MaxSocketReuseTime)
 	session := newSession(Eventual, cluster, info.Timeout)
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {

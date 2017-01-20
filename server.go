@@ -42,21 +42,22 @@ import (
 
 type mongoServer struct {
 	sync.RWMutex
-	Addr          string
-	ResolvedAddr  string
-	tcpaddr       *net.TCPAddr
-	unusedSockets *list.List
-	liveSockets   []*mongoSocket
-	closed        bool
-	abended       bool
-	sync          chan bool
-	dial          dialer
-	pingValue     time.Duration
-	pingIndex     int
-	pingCount     uint32
-	pingWindow    [6]time.Duration
-	info          *mongoServerInfo
-	maxSocketUses int
+	Addr               string
+	ResolvedAddr       string
+	tcpaddr            *net.TCPAddr
+	unusedSockets      *list.List
+	liveSockets        []*mongoSocket
+	closed             bool
+	abended            bool
+	sync               chan bool
+	dial               dialer
+	pingValue          time.Duration
+	pingIndex          int
+	pingCount          uint32
+	pingWindow         [6]time.Duration
+	info               *mongoServerInfo
+	maxSocketUses      int
+	maxSocketReuseTime time.Duration
 }
 
 type dialer struct {
@@ -78,7 +79,7 @@ type mongoServerInfo struct {
 
 var defaultServerInfo mongoServerInfo
 
-func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer, maxSocketUses int) *mongoServer {
+func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer, maxSocketUses int, maxSocketReuseTime time.Duration) *mongoServer {
 	server := &mongoServer{
 		Addr:          addr,
 		ResolvedAddr:  tcpaddr.String(),
@@ -89,6 +90,7 @@ func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer, m
 		info:          &defaultServerInfo,
 		pingValue:     time.Hour, // Push it back before an actual ping.
 		maxSocketUses: maxSocketUses,
+		maxSocketReuseTime: maxSocketReuseTime,
 	}
 	go server.pinger(true)
 	return server
@@ -183,7 +185,12 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)
-	return newSocket(server, conn, timeout, server.maxSocketUses), nil
+	var socketExpiryTime *time.Time
+	if server.maxSocketReuseTime != 0 {
+		expiryTime := time.Now().Add(server.maxSocketReuseTime * time.Second)
+		socketExpiryTime = &expiryTime
+	}
+	return newSocket(server, conn, timeout, server.maxSocketUses, socketExpiryTime), nil
 }
 
 // Close forces closing all sockets that are alive, whether

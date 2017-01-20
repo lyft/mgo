@@ -1682,7 +1682,7 @@ func (s *S) TestMaxSocketUses(c *C) {
 	if *fast {
 		c.Skip("-fast")
 	}
-	session, err := mgo.Dial("localhost:40011?maxSocketUses=4")
+	session, err := mgo.Dial("localhost:40011?maxSocketReuseTimeSecs=1")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1693,20 +1693,47 @@ func (s *S) TestMaxSocketUses(c *C) {
 		time.Sleep(5e8)
 	}
 
-	// a socket was used during connection
-	numUses := 1
-
-	// acquire and release sockets, the pool should grow to minPoolSize
-	for i := 0; i < 24; i++ {
+	for i := 0; i < 2; i++ {
 		stats = mgo.GetStats()
 		// every 4th usage should result in a new connection
-		c.Assert(stats.MasterConns, Equals, (numUses/4)+1)
-		numUses++
+		c.Logf("Active connections: %d", stats.SocketsAlive)
 		s := session.Copy()
 		defer s.Close()
 		c.Check(s.Ping(), IsNil)
+		time.Sleep(time.Second)
 		s.Refresh()
 	}
+
+	c.Assert(stats.SocketsExpired, Equals, 1)
+}
+
+func (s *S) TestNoMaxSocketUses(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+	session, err := mgo.Dial("localhost:40011")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	stats := mgo.GetStats()
+	for stats.SocketsAlive != 3 {
+		c.Logf("Waiting for all connections to be established (sockets alive currently %d)...", stats.SocketsAlive)
+		stats = mgo.GetStats()
+		time.Sleep(5e8)
+	}
+
+	for i := 0; i < 2; i++ {
+		stats = mgo.GetStats()
+		// every 4th usage should result in a new connection
+		c.Logf("Active connections: %d", stats.SocketsAlive)
+		s := session.Copy()
+		defer s.Close()
+		c.Check(s.Ping(), IsNil)
+		time.Sleep(time.Second)
+		s.Refresh()
+	}
+
+	c.Assert(stats.SocketsExpired, Equals, 0)
 }
 
 func (s *S) TestSetModeEventualIterBug(c *C) {
