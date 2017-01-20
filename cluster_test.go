@@ -1477,7 +1477,6 @@ func (s *S) TestSecondaryModeWithMongosInsert(c *C) {
 	c.Assert(result.A, Equals, 1)
 }
 
-
 func (s *S) TestRemovalOfClusterMember(c *C) {
 	if *fast {
 		c.Skip("-fast")
@@ -1682,6 +1681,37 @@ func (s *S) TestMaxSocketUses(c *C) {
 	if *fast {
 		c.Skip("-fast")
 	}
+	session, err := mgo.Dial("localhost:40011?maxSocketUses=4")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	stats := mgo.GetStats()
+	for stats.SocketsAlive != 3 {
+		c.Logf("Waiting for all connections to be established (sockets alive currently %d)...", stats.SocketsAlive)
+		stats = mgo.GetStats()
+		time.Sleep(5e8)
+	}
+
+	// a socket was used during connection
+	numUses := 1
+
+	// acquire and release sockets, the pool should grow to minPoolSize
+	for i := 0; i < 24; i++ {
+		stats = mgo.GetStats()
+		// every 4th usage should result in a new connection
+		c.Assert(stats.MasterConns, Equals, (numUses/4)+1)
+		numUses++
+		s := session.Copy()
+		defer s.Close()
+		c.Check(s.Ping(), IsNil)
+		s.Refresh()
+	}
+}
+
+func (s *S) TestMaxSocketUseTime(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
 	session, err := mgo.Dial("localhost:40011?maxSocketReuseTimeSecs=1")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -1707,7 +1737,7 @@ func (s *S) TestMaxSocketUses(c *C) {
 	c.Assert(stats.SocketsExpired, Equals, 1)
 }
 
-func (s *S) TestNoMaxSocketUses(c *C) {
+func (s *S) TestNoMaxSocketUseTime(c *C) {
 	if *fast {
 		c.Skip("-fast")
 	}

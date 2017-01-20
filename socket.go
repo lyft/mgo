@@ -53,7 +53,7 @@ type mongoSocket struct {
 	gotNonce      sync.Cond
 	dead          error
 	serverInfo    *mongoServerInfo
-	maxUses       int // maximum number of times this socket can be used before it is closed
+	maxUses       int        // maximum number of times this socket can be used before it is closed
 	expiryTime    *time.Time // time in future when this socket should be expired
 }
 
@@ -186,7 +186,7 @@ func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration, maxUse
 		server:     server,
 		replyFuncs: make(map[uint32]replyFunc),
 		maxUses:    maxUses,
-		expiryTime:    expiryTime,
+		expiryTime: expiryTime,
 	}
 	socket.gotNonce.L = &socket.Mutex
 	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {

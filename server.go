@@ -81,15 +81,15 @@ var defaultServerInfo mongoServerInfo
 
 func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer, maxSocketUses int, maxSocketReuseTime time.Duration) *mongoServer {
 	server := &mongoServer{
-		Addr:          addr,
-		ResolvedAddr:  tcpaddr.String(),
-		tcpaddr:       tcpaddr,
-		unusedSockets: list.New(),
-		sync:          sync,
-		dial:          dial,
-		info:          &defaultServerInfo,
-		pingValue:     time.Hour, // Push it back before an actual ping.
-		maxSocketUses: maxSocketUses,
+		Addr:               addr,
+		ResolvedAddr:       tcpaddr.String(),
+		tcpaddr:            tcpaddr,
+		unusedSockets:      list.New(),
+		sync:               sync,
+		dial:               dial,
+		info:               &defaultServerInfo,
+		pingValue:          time.Hour, // Push it back before an actual ping.
+		maxSocketUses:      maxSocketUses,
 		maxSocketReuseTime: maxSocketReuseTime,
 	}
 	go server.pinger(true)

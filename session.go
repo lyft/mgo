@@ -330,17 +330,17 @@ func ParseURL(url string) (*DialInfo, error) {
 		}
 	}
 	info := DialInfo{
-		Addrs:          uinfo.addrs,
-		Direct:         direct,
-		Database:       uinfo.db,
-		Username:       uinfo.user,
-		Password:       uinfo.pass,
-		Mechanism:      mechanism,
-		Service:        service,
-		Source:         source,
-		PoolLimit:      poolLimit,
-		MaxSocketUses:  maxSocketUses,
-		ReplicaSetName: setName,
+		Addrs:              uinfo.addrs,
+		Direct:             direct,
+		Database:           uinfo.db,
+		Username:           uinfo.user,
+		Password:           uinfo.pass,
+		Mechanism:          mechanism,
+		Service:            service,
+		Source:             source,
+		PoolLimit:          poolLimit,
+		MaxSocketUses:      maxSocketUses,
+		ReplicaSetName:     setName,
 		MaxSocketReuseTime: time.Duration(maxSocketReuseTimeSecs),
 	}
 	return &info, nil

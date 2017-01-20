@@ -67,14 +67,14 @@ type mongoCluster struct {
 
 func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string, maxSocketUses int, maxSocketReuseTime time.Duration) *mongoCluster {
 	cluster := &mongoCluster{
-		userSeeds:  	   	userSeeds,
-		references:    		1,
-		direct:        		direct,
-		failFast:      		failFast,
-		dial:          		dial,
-		setName:       		setName,
-		maxSocketUses: 		maxSocketUses,
-		maxSocketReuseTime: 	maxSocketReuseTime,
+		userSeeds:          userSeeds,
+		references:         1,
+		direct:             direct,
+		failFast:           failFast,
+		dial:               dial,
+		setName:            setName,
+		maxSocketUses:      maxSocketUses,
+		maxSocketReuseTime: maxSocketReuseTime,
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	cluster.sync = make(chan bool, 1)
