@@ -34,9 +34,9 @@ import (
 	"sync"
 	"time"
 
-	. "gopkg.in/check.v1"
 	"github.com/lyft/mgo"
 	"github.com/lyft/mgo/bson"
+	. "gopkg.in/check.v1"
 )
 
 func (s *S) TestNewSession(c *C) {
@@ -1476,7 +1476,6 @@ func (s *S) TestSecondaryModeWithMongosInsert(c *C) {
 	coll.Find(nil).One(&result)
 	c.Assert(result.A, Equals, 1)
 }
-
 
 func (s *S) TestRemovalOfClusterMember(c *C) {
 	if *fast {

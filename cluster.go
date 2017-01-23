@@ -47,31 +47,31 @@ import (
 
 type mongoCluster struct {
 	sync.RWMutex
-	serverSynced sync.Cond
-	userSeeds    []string
-	dynaSeeds    []string
-	servers      mongoServers
-	masters      mongoServers
-	references   int
-	syncing      bool
-	direct       bool
-	failFast     bool
-	syncCount    uint
-	setName      string
-	cachedIndex  map[string]bool
-	sync         chan bool
-	dial         dialer
+	serverSynced       sync.Cond
+	userSeeds          []string
+	dynaSeeds          []string
+	servers            mongoServers
+	masters            mongoServers
+	references         int
+	syncing            bool
+	direct             bool
+	failFast           bool
+	syncCount          uint
+	setName            string
+	cachedIndex        map[string]bool
+	sync               chan bool
+	dial               dialer
 	maxSocketReuseTime time.Duration
 }
 
 func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string, maxSocketReuseTime time.Duration) *mongoCluster {
 	cluster := &mongoCluster{
-		userSeeds:  userSeeds,
-		references: 1,
-		direct:     direct,
-		failFast:   failFast,
-		dial:       dial,
-		setName:    setName,
+		userSeeds:          userSeeds,
+		references:         1,
+		direct:             direct,
+		failFast:           failFast,
+		dial:               dial,
+		setName:            setName,
 		maxSocketReuseTime: maxSocketReuseTime,
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()

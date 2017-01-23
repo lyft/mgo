@@ -67,15 +67,15 @@ func ResetStats() {
 }
 
 type Stats struct {
-	Clusters     int
-	MasterConns  int
-	SlaveConns   int
-	SentOps      int
-	ReceivedOps  int
-	ReceivedDocs int
-	SocketsAlive int
-	SocketsInUse int
-	SocketRefs   int
+	Clusters       int
+	MasterConns    int
+	SlaveConns     int
+	SentOps        int
+	ReceivedOps    int
+	ReceivedDocs   int
+	SocketsAlive   int
+	SocketsInUse   int
+	SocketRefs     int
 	SocketsExpired int
 }
 

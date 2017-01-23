@@ -41,20 +41,20 @@ import (
 
 type mongoServer struct {
 	sync.RWMutex
-	Addr          string
-	ResolvedAddr  string
-	tcpaddr       *net.TCPAddr
-	unusedSockets []*mongoSocket
-	liveSockets   []*mongoSocket
-	closed        bool
-	abended       bool
-	sync          chan bool
-	dial          dialer
-	pingValue     time.Duration
-	pingIndex     int
-	pingCount     uint32
-	pingWindow    [6]time.Duration
-	info          *mongoServerInfo
+	Addr               string
+	ResolvedAddr       string
+	tcpaddr            *net.TCPAddr
+	unusedSockets      []*mongoSocket
+	liveSockets        []*mongoSocket
+	closed             bool
+	abended            bool
+	sync               chan bool
+	dial               dialer
+	pingValue          time.Duration
+	pingIndex          int
+	pingCount          uint32
+	pingWindow         [6]time.Duration
+	info               *mongoServerInfo
 	maxSocketReuseTime time.Duration
 }
 
@@ -79,13 +79,13 @@ var defaultServerInfo mongoServerInfo
 
 func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer, maxSocketReuseTime time.Duration) *mongoServer {
 	server := &mongoServer{
-		Addr:         addr,
-		ResolvedAddr: tcpaddr.String(),
-		tcpaddr:      tcpaddr,
-		sync:         sync,
-		dial:         dial,
-		info:         &defaultServerInfo,
-		pingValue:    time.Hour, // Push it back before an actual ping.
+		Addr:               addr,
+		ResolvedAddr:       tcpaddr.String(),
+		tcpaddr:            tcpaddr,
+		sync:               sync,
+		dial:               dial,
+		info:               &defaultServerInfo,
+		pingValue:          time.Hour, // Push it back before an actual ping.
 		maxSocketReuseTime: maxSocketReuseTime,
 	}
 	go server.pinger(true)

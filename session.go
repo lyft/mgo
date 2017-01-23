@@ -311,16 +311,16 @@ func ParseURL(url string) (*DialInfo, error) {
 		}
 	}
 	info := DialInfo{
-		Addrs:          uinfo.addrs,
-		Direct:         direct,
-		Database:       uinfo.db,
-		Username:       uinfo.user,
-		Password:       uinfo.pass,
-		Mechanism:      mechanism,
-		Service:        service,
-		Source:         source,
-		PoolLimit:      poolLimit,
-		ReplicaSetName: setName,
+		Addrs:              uinfo.addrs,
+		Direct:             direct,
+		Database:           uinfo.db,
+		Username:           uinfo.user,
+		Password:           uinfo.pass,
+		Mechanism:          mechanism,
+		Service:            service,
+		Source:             source,
+		PoolLimit:          poolLimit,
+		ReplicaSetName:     setName,
 		MaxSocketReuseTime: time.Duration(maxSocketReuseTimeSecs),
 	}
 	return &info, nil
@@ -388,9 +388,9 @@ type DialInfo struct {
 	// See Session.SetPoolLimit for details.
 	PoolLimit int
 
-        // Max time for a socket before it can no longer be reused. Set 0 to disable
-        // Default: 0
-        MaxSocketReuseTime time.Duration
+	// Max time for a socket before it can no longer be reused. Set 0 to disable
+	// Default: 0
+	MaxSocketReuseTime time.Duration
 
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
