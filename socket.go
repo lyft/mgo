@@ -53,8 +53,6 @@ type mongoSocket struct {
 	gotNonce      sync.Cond
 	dead          error
 	serverInfo    *mongoServerInfo
-	maxUses       int        // maximum number of times this socket can be used before it is closed
-	expiryTime    *time.Time // time in future when this socket should be expired
 }
 
 type queryOpFlags uint32
@@ -179,14 +177,12 @@ type requestInfo struct {
 	replyFunc replyFunc
 }
 
-func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration, maxUses int, expiryTime *time.Time) *mongoSocket {
+func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration) *mongoSocket {
 	socket := &mongoSocket{
 		conn:       conn,
 		addr:       server.Addr,
 		server:     server,
 		replyFuncs: make(map[uint32]replyFunc),
-		maxUses:    maxUses,
-		expiryTime: expiryTime,
 	}
 	socket.gotNonce.L = &socket.Mutex
 	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {
@@ -230,13 +226,6 @@ func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo, timeout t
 		socket.Unlock()
 		return dead
 	}
-	if socket.expiryTime != nil && time.Now().After(*socket.expiryTime) {
-		stats.socketsExpired(+1)
-		debugf("socket: %p cannot use socket - max connection reuse time expired", socket)
-		socket.Unlock()
-		socket.Close()
-		return errors.New("Socket reuse time expired")
-	}
 	socket.references++
 	socket.serverInfo = serverInfo
 	socket.timeout = timeout
@@ -275,21 +264,11 @@ func (socket *mongoSocket) Release() {
 	if socket.references == 0 {
 		stats.socketsInUse(-1)
 		server := socket.server
-		recycle := true
-		if socket.maxUses > 0 {
-			socket.maxUses -= 1
-			if socket.maxUses == 0 {
-				recycle = false
-			}
-		}
-
 		socket.Unlock()
 		socket.LogoutAll()
 		// If the socket is dead server is nil.
-		if server != nil && recycle {
+		if server != nil {
 			server.RecycleSocket(socket)
-		} else {
-			socket.Close()
 		}
 	} else {
 		socket.Unlock()
