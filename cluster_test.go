@@ -1642,7 +1642,7 @@ func (s *S) TestMaxSocketUseTimeExpireAfterRelease(c *C) {
 	if *fast {
 		c.Skip("-fast")
 	}
-	session, err := mgo.Dial("localhost:40011?maxSocketReuseTimeSecs=1")
+	session, err := mgo.Dial("localhost:40011?maxSocketReuseTimeSecs=2")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1655,7 +1655,6 @@ func (s *S) TestMaxSocketUseTimeExpireAfterRelease(c *C) {
 
 	session2 := session.Copy()
 	defer session2.Close()
-
 	c.Check(session2.Ping(), IsNil)
 	// refresh will return connection back so they can be recycled
 	session2.Refresh()
@@ -1663,7 +1662,7 @@ func (s *S) TestMaxSocketUseTimeExpireAfterRelease(c *C) {
 	// connection timeout not expired, we shouldnt expire any connections
 	c.Assert(stats.SocketsExpired, Equals, 0)
 	// wait for enough time to expire the connection
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(2500 * time.Millisecond)
 	// request a connection, look for recycled connections first and make sure max life time
 	// for connection has not reached
 	c.Check(session2.Ping(), IsNil)
