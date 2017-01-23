@@ -76,6 +76,7 @@ type Stats struct {
 	SocketsAlive int
 	SocketsInUse int
 	SocketRefs   int
+	SocketsExpired int
 }
 
 func (stats *Stats) cluster(delta int) {
@@ -126,6 +127,14 @@ func (stats *Stats) socketsInUse(delta int) {
 	if stats != nil {
 		statsMutex.Lock()
 		stats.SocketsInUse += delta
+		statsMutex.Unlock()
+	}
+}
+
+func (stats *Stats) socketsExpired(delta int) {
+	if stats != nil {
+		statsMutex.Lock()
+		stats.SocketsExpired += delta
 		statsMutex.Unlock()
 	}
 }

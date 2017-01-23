@@ -61,9 +61,10 @@ type mongoCluster struct {
 	cachedIndex  map[string]bool
 	sync         chan bool
 	dial         dialer
+	maxSocketReuseTime time.Duration
 }
 
-func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string) *mongoCluster {
+func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string, maxSocketReuseTime time.Duration) *mongoCluster {
 	cluster := &mongoCluster{
 		userSeeds:  userSeeds,
 		references: 1,
@@ -71,6 +72,7 @@ func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName 
 		failFast:   failFast,
 		dial:       dial,
 		setName:    setName,
+		maxSocketReuseTime: maxSocketReuseTime,
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	cluster.sync = make(chan bool, 1)
@@ -406,7 +408,7 @@ func (cluster *mongoCluster) server(addr string, tcpaddr *net.TCPAddr) *mongoSer
 	if server != nil {
 		return server
 	}
-	return newServer(addr, tcpaddr, cluster.sync, cluster.dial)
+	return newServer(addr, tcpaddr, cluster.sync, cluster.dial, cluster.maxSocketReuseTime)
 }
 
 func resolveAddr(addr string) (*net.TCPAddr, error) {
