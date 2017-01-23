@@ -1708,7 +1708,7 @@ func (s *S) TestMaxSocketUses(c *C) {
 	}
 }
 
-func (s *S) TestMaxSocketUseTime(c *C) {
+func (s *S) TestMaxSocketUseTimeExpireAfterRelease(c *C) {
 	if *fast {
 		c.Skip("-fast")
 	}
@@ -1723,47 +1723,23 @@ func (s *S) TestMaxSocketUseTime(c *C) {
 		time.Sleep(5e8)
 	}
 
-	for i := 0; i < 2; i++ {
-		stats = mgo.GetStats()
-		// every 4th usage should result in a new connection
-		c.Logf("Active connections: %d", stats.SocketsAlive)
-		s := session.Copy()
-		defer s.Close()
-		c.Check(s.Ping(), IsNil)
-		time.Sleep(time.Second)
-		s.Refresh()
-	}
+	session2 := session.Copy()
+	defer session2.Close()
 
-	c.Assert(stats.SocketsExpired, Equals, 1)
-}
-
-func (s *S) TestNoMaxSocketUseTime(c *C) {
-	if *fast {
-		c.Skip("-fast")
-	}
-	session, err := mgo.Dial("localhost:40011")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	stats := mgo.GetStats()
-	for stats.SocketsAlive != 3 {
-		c.Logf("Waiting for all connections to be established (sockets alive currently %d)...", stats.SocketsAlive)
-		stats = mgo.GetStats()
-		time.Sleep(5e8)
-	}
-
-	for i := 0; i < 2; i++ {
-		stats = mgo.GetStats()
-		// every 4th usage should result in a new connection
-		c.Logf("Active connections: %d", stats.SocketsAlive)
-		s := session.Copy()
-		defer s.Close()
-		c.Check(s.Ping(), IsNil)
-		time.Sleep(time.Second)
-		s.Refresh()
-	}
-
+	c.Check(session2.Ping(), IsNil)
+	// refresh will return connection back so they can be recycled
+	session2.Refresh()
+	stats = mgo.GetStats()
+	// connection timeout not expired, we shouldnt expire any connections
 	c.Assert(stats.SocketsExpired, Equals, 0)
+	// wait for enough time to expire the connection
+	time.Sleep(1500 * time.Millisecond)
+	// request a connection, look for recycled connections first and make sure max life time
+	// for connection has not reached
+	c.Check(session2.Ping(), IsNil)
+	// timeout for connection life expired, we should see one connection expired
+	stats = mgo.GetStats()
+	c.Assert(stats.SocketsExpired, Equals, 1)
 }
 
 func (s *S) TestSetModeEventualIterBug(c *C) {

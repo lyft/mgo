@@ -230,6 +230,13 @@ func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo, timeout t
 		socket.Unlock()
 		return dead
 	}
+	if socket.expiryTime != nil && time.Now().After(*socket.expiryTime) {
+		stats.socketsExpired(+1)
+		debugf("socket: %p cannot use socket - max connection reuse time expired", socket)
+		socket.Unlock()
+		socket.Close()
+		return errors.New("Socket reuse time expired")
+	}
 	socket.references++
 	socket.serverInfo = serverInfo
 	socket.timeout = timeout
@@ -274,11 +281,6 @@ func (socket *mongoSocket) Release() {
 			if socket.maxUses == 0 {
 				recycle = false
 			}
-		}
-		if socket.expiryTime != nil && time.Now().After(*socket.expiryTime) {
-			stats.socketsExpired(+1)
-			debug("closing socket after max connection reuse time expired")
-			recycle = false
 		}
 
 		socket.Unlock()
