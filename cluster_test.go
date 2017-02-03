@@ -1671,6 +1671,37 @@ func (s *S) TestMaxSocketUseTimeExpireAfterRelease(c *C) {
 	c.Assert(stats.SocketsExpired, Equals, 1)
 }
 
+// test to ensure that expired sockets are removed from active sockets list
+func (s *S) TestSocketExpiryEnsureSocketClosed(c *C) {
+	var session *mgo.Session
+	var err error
+	session, err = mgo.Dial("localhost:40001?maxPoolSize=1&maxSocketReuseTimeSecs=1")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Put one socket in use.
+	c.Assert(session.Ping(), IsNil)
+
+	done := make(chan time.Duration)
+
+	// Now block trying to get another one due to the pool limit.
+	go func() {
+		copy := session.Copy()
+		defer copy.Close()
+		started := time.Now()
+		c.Check(copy.Ping(), IsNil)
+		done <- time.Now().Sub(started)
+	}()
+
+	// ensure that sockets is recycled after expiry time expired
+	time.Sleep(time.Second)
+
+	// Put the one socket back in the pool, freeing it for the copy.
+	session.Refresh()
+	delay := <-done
+	c.Assert(delay > 300 * time.Millisecond, Equals, true, Commentf("Delay: %s", delay))
+}
+
 func (s *S) TestSetModeEventualIterBug(c *C) {
 	session1, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)

@@ -297,6 +297,7 @@ func ParseURL(url string) (*DialInfo, error) {
 			if err != nil {
 				return nil, errors.New("bad value for maxSocketReuseTime: " + v)
 			}
+			debugf("using maxSocketReuseTimeSecs: %d", maxSocketReuseTimeSecs)
 		case "connect":
 			if v == "direct" {
 				direct = true
