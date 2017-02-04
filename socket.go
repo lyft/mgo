@@ -233,6 +233,7 @@ func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo, timeout t
 		debugf("socket: %p cannot use socket - max connection reuse time expired", socket)
 		socket.Unlock()
 		err := errors.New("Socket reuse time expired")
+		// terminate the socket and cleanup all socket use counters
 		socket.kill(err, true)
 		return err
 	}

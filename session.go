@@ -89,7 +89,6 @@ type Session struct {
 	sourcedb         string
 	dialCred         *Credential
 	creds            []Credential
-	poolLimit        int
 	bypassValidation bool
 }
 
@@ -461,7 +460,10 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		session.creds = []Credential{*session.dialCred}
 	}
 	if info.PoolLimit > 0 {
-		session.poolLimit = info.PoolLimit
+		debugf("updating poolinfo: %d", info.PoolLimit)
+		session.cluster_.poolLimit = info.PoolLimit
+	} else {
+		session.cluster_.poolLimit = 4096
 	}
 	cluster.Release()
 
@@ -536,7 +538,6 @@ func newSession(consistency Mode, cluster *mongoCluster, timeout time.Duration) 
 		cluster_:    cluster,
 		syncTimeout: timeout,
 		sockTimeout: timeout,
-		poolLimit:   4096,
 	}
 	debugf("New session %p on cluster %p", session, cluster)
 	session.SetMode(consistency, true)
@@ -1702,9 +1703,10 @@ func (s *Session) SetCursorTimeout(d time.Duration) {
 // such concurrency "at the door" instead, by properly restricting the amount
 // of used resources and number of goroutines before they are created.
 func (s *Session) SetPoolLimit(limit int) {
-	s.m.Lock()
-	s.poolLimit = limit
-	s.m.Unlock()
+	s.cluster_.Lock()
+	debugf("s.cluster_.poolLimit: %d", s.cluster_.poolLimit)
+	s.cluster_.poolLimit = limit
+	s.cluster_.Unlock()
 }
 
 // SetBypassValidation sets whether the server should bypass the registered
@@ -4346,7 +4348,7 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Still not good.  We need a new socket.
-	sock, err := s.cluster().AcquireSocket(s.consistency, slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit)
+	sock, err := s.cluster().AcquireSocket(s.consistency, slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags)
 	if err != nil {
 		return nil, err
 	}
