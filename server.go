@@ -56,6 +56,7 @@ type mongoServer struct {
 	pingWindow         [6]time.Duration
 	info               *mongoServerInfo
 	maxSocketReuseTime time.Duration
+	activeSocketCounts int
 }
 
 type dialer struct {
@@ -111,15 +112,16 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			server.Unlock()
 			return nil, abended, errServerClosed
 		}
-		n := len(server.unusedSockets)
-		if poolLimit > 0 && len(server.liveSockets)-n >= poolLimit {
+
+		if poolLimit > 0 && server.activeSocketCounts >= poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		}
-		if n > 0 {
-			socket = server.unusedSockets[n-1]
-			server.unusedSockets[n-1] = nil // Help GC.
-			server.unusedSockets = server.unusedSockets[:n-1]
+		unusedSocketsCount := len(server.unusedSockets)
+		if unusedSocketsCount > 0 {
+			socket = server.unusedSockets[unusedSocketsCount-1]
+			server.unusedSockets[unusedSocketsCount-1] = nil // Help GC.
+			server.unusedSockets = server.unusedSockets[:unusedSocketsCount-1]
 			info := server.info
 			server.Unlock()
 			err = socket.InitialAcquire(info, timeout)
@@ -127,6 +129,8 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 				continue
 			}
 		} else {
+			// try to establish new connection to mongo server
+			server.activeSocketCounts++
 			server.Unlock()
 			socket, err = server.Connect(timeout)
 			if err == nil {
@@ -134,12 +138,17 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 				// We've waited for the Connect, see if we got
 				// closed in the meantime
 				if server.closed {
+					server.activeSocketCounts--
 					server.Unlock()
 					socket.Release()
 					socket.Close()
 					return nil, abended, errServerClosed
 				}
 				server.liveSockets = append(server.liveSockets, socket)
+				server.Unlock()
+			} else {
+				server.Lock()
+				server.activeSocketCounts--
 				server.Unlock()
 			}
 		}
@@ -243,6 +252,7 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 		return
 	}
 	server.liveSockets = removeSocket(server.liveSockets, socket)
+	server.activeSocketCounts = len(server.liveSockets)
 	server.unusedSockets = removeSocket(server.unusedSockets, socket)
 	server.Unlock()
 	// Maybe just a timeout, but suggest a cluster sync up just in case.
