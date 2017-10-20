@@ -113,7 +113,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			return nil, abended, errServerClosed
 		}
 
-		if poolLimit > 0 && server.activeSocketsCount >= poolLimit {
+		if poolLimit > 0 && server.activeSocketsCount > poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		}
