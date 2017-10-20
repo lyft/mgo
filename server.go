@@ -56,7 +56,7 @@ type mongoServer struct {
 	pingWindow         [6]time.Duration
 	info               *mongoServerInfo
 	maxSocketReuseTime time.Duration
-	activeSocketCounts int
+	activeSocketsCount int
 }
 
 type dialer struct {
@@ -113,7 +113,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			return nil, abended, errServerClosed
 		}
 
-		if poolLimit > 0 && server.activeSocketCounts >= poolLimit {
+		if poolLimit > 0 && server.activeSocketsCount >= poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		}
@@ -130,7 +130,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			}
 		} else {
 			// try to establish new connection to mongo server
-			server.activeSocketCounts++
+			server.activeSocketsCount++
 			server.Unlock()
 			socket, err = server.Connect(timeout)
 			if err == nil {
@@ -138,7 +138,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 				// We've waited for the Connect, see if we got
 				// closed in the meantime
 				if server.closed {
-					server.activeSocketCounts--
+					server.activeSocketsCount--
 					server.Unlock()
 					socket.Release()
 					socket.Close()
@@ -148,7 +148,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 				server.Unlock()
 			} else {
 				server.Lock()
-				server.activeSocketCounts--
+				server.activeSocketsCount--
 				server.Unlock()
 			}
 		}
@@ -252,7 +252,7 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 		return
 	}
 	server.liveSockets = removeSocket(server.liveSockets, socket)
-	server.activeSocketCounts = len(server.liveSockets)
+	server.activeSocketsCount = len(server.liveSockets)
 	server.unusedSockets = removeSocket(server.unusedSockets, socket)
 	server.Unlock()
 	// Maybe just a timeout, but suggest a cluster sync up just in case.
