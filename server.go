@@ -114,10 +114,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 		}
 
 		unusedSocketsCount := len(server.unusedSockets)
-		if unusedSocketsCount == 0 && poolLimit > 0 && server.activeSocketsCount >= poolLimit {
-			server.Unlock()
-			return nil, false, errPoolLimit
-		}
+		// see if we've unused socket that we could use
 		if unusedSocketsCount > 0 {
 			socket = server.unusedSockets[unusedSocketsCount-1]
 			server.unusedSockets[unusedSocketsCount-1] = nil // Help GC.
@@ -128,8 +125,12 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			if err != nil {
 				continue
 			}
+		} else if poolLimit > 0 && server.activeSocketsCount >= poolLimit {
+			server.Unlock()
+			return nil, false, errPoolLimit
 		} else {
-			// try to establish new connection to mongo server
+			// no unused sockets found and we're below pool limit
+			//  try to establish new connection to mongo server
 			server.activeSocketsCount++
 			server.Unlock()
 			socket, err = server.Connect(timeout)
@@ -154,7 +155,6 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 		}
 		return
 	}
-	panic("unreachable")
 }
 
 // Connect establishes a new connection to the server. This should
