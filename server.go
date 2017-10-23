@@ -113,11 +113,11 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			return nil, abended, errServerClosed
 		}
 
-		if poolLimit > 0 && server.activeSocketsCount > poolLimit {
+		unusedSocketsCount := len(server.unusedSockets)
+		if unusedSocketsCount == 0 && poolLimit > 0 && server.activeSocketsCount >= poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		}
-		unusedSocketsCount := len(server.unusedSockets)
 		if unusedSocketsCount > 0 {
 			socket = server.unusedSockets[unusedSocketsCount-1]
 			server.unusedSockets[unusedSocketsCount-1] = nil // Help GC.
