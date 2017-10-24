@@ -185,13 +185,12 @@ type requestInfo struct {
 	replyFunc replyFunc
 }
 
-func newSocket(server *mongoServer, socket *mongoSocket, conn net.Conn, timeout time.Duration, expiryTime *time.Time) *mongoSocket {
+func newSocket(server *mongoServer, socket *mongoSocket, conn net.Conn, timeout time.Duration, expiryTime *time.Time) {
 	socket.conn = conn
 	socket.addr = server.Addr
 	socket.server = server
 	socket.replyFuncs = make(map[uint32]replyFunc)
 	socket.expiryTime = expiryTime
-
 	socket.gotNonce.L = &socket.Mutex
 	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {
 		panic("newSocket: InitialAcquire returned error: " + err.Error())
@@ -200,7 +199,6 @@ func newSocket(server *mongoServer, socket *mongoSocket, conn net.Conn, timeout 
 	debugf("Socket %p to %s: initialized", socket, socket.addr)
 	socket.resetNonce()
 	go socket.readLoop()
-	return socket
 }
 
 // Server returns the server that the socket is associated with.
