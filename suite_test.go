@@ -156,12 +156,13 @@ func (s *S) pid(host string) int {
 		panic(err)
 	}
 	pidstr := string(output[1 : len(output)-1])
+
 	if strings.Contains(pidstr, "\n") {
 		pidstr = string(pidstr[0 : strings.Index(pidstr, "\n")])
 	}
 	pid, err := strconv.Atoi(pidstr)
 	if err != nil {
-		panic( fmt.Sprintf("cannot convert pid to int: . %s .", pidstr))
+		panic("cannot convert pid to int: " + pidstr)
 	}
 	return pid
 }
