@@ -38,6 +38,12 @@ import (
 
 type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
 
+type ScoketState int
+const (
+	Connecting = 1
+	Connected = 2
+)
+
 type mongoSocket struct {
 	sync.Mutex
 	server        *mongoServer // nil when cached
@@ -54,6 +60,7 @@ type mongoSocket struct {
 	dead          error
 	serverInfo    *mongoServerInfo
 	expiryTime    *time.Time // time in future when this socket should be expired
+	socketState   ScoketState
 }
 
 type queryOpFlags uint32
@@ -178,14 +185,13 @@ type requestInfo struct {
 	replyFunc replyFunc
 }
 
-func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration, expiryTime *time.Time) *mongoSocket {
-	socket := &mongoSocket{
-		conn:       conn,
-		addr:       server.Addr,
-		server:     server,
-		replyFuncs: make(map[uint32]replyFunc),
-		expiryTime: expiryTime,
-	}
+func newSocket(server *mongoServer, socket *mongoSocket, conn net.Conn, timeout time.Duration, expiryTime *time.Time) *mongoSocket {
+	socket.conn = conn
+	socket.addr = server.Addr
+	socket.server = server
+	socket.replyFuncs = make(map[uint32]replyFunc)
+	socket.expiryTime = expiryTime
+
 	socket.gotNonce.L = &socket.Mutex
 	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {
 		panic("newSocket: InitialAcquire returned error: " + err.Error())

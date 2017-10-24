@@ -56,7 +56,6 @@ type mongoServer struct {
 	pingWindow         [6]time.Duration
 	info               *mongoServerInfo
 	maxSocketReuseTime time.Duration
-	activeSocketsCount int
 }
 
 type dialer struct {
@@ -125,31 +124,35 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			if err != nil {
 				continue
 			}
-		} else if poolLimit > 0 && server.activeSocketsCount >= poolLimit {
+		} else if poolLimit > 0 && len(server.liveSockets) >= poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		} else {
 			// no unused sockets found and we're below pool limit
-			//  try to establish new connection to mongo server
-			server.activeSocketsCount++
+			// try to establish new connection to mongo server
+			socket = &mongoSocket{
+				socketState: Connecting,
+			}
+			// hold our spot in the liveSockets slice
+			server.liveSockets = append(server.liveSockets, socket)
 			server.Unlock()
-			socket, err = server.Connect(timeout)
-			if err == nil {
+			// release server lock so we can initiate concurrent connections to mongodb
+			err = server.Connect(timeout, socket)
+			if err == nil && socket.socketState == Connected {
 				server.Lock()
 				// We've waited for the Connect, see if we got
 				// closed in the meantime
 				if server.closed {
-					server.activeSocketsCount--
 					server.Unlock()
 					socket.Release()
 					socket.Close()
 					return nil, abended, errServerClosed
 				}
-				server.liveSockets = append(server.liveSockets, socket)
 				server.Unlock()
 			} else {
+				// couldn't open connection to mongodb, releasing spot in liveSockets
 				server.Lock()
-				server.activeSocketsCount--
+				server.liveSockets = removeSocket(server.liveSockets, socket)
 				server.Unlock()
 			}
 		}
@@ -159,7 +162,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 
 // Connect establishes a new connection to the server. This should
 // generally be done through server.AcquireSocket().
-func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) {
+func (server *mongoServer) Connect(timeout time.Duration, socket *mongoSocket) error {
 	server.RLock()
 	master := server.info.Master
 	dial := server.dial
@@ -187,7 +190,7 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	}
 	if err != nil {
 		logf("Connection to %s failed: %v", server.Addr, err.Error())
-		return nil, err
+		return err
 	}
 	logf("Connection to %s established.", server.Addr)
 
@@ -197,7 +200,9 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 		expiryTime := time.Now().Add(server.maxSocketReuseTime * time.Second)
 		socketExpiryTime = &expiryTime
 	}
-	return newSocket(server, conn, timeout, socketExpiryTime), nil
+	newSocket(server, socket, conn, timeout, socketExpiryTime)
+	socket.socketState = Connected
+	return nil
 }
 
 // Close forces closing all sockets that are alive, whether
@@ -252,7 +257,6 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 		return
 	}
 	server.liveSockets = removeSocket(server.liveSockets, socket)
-	server.activeSocketsCount = len(server.liveSockets)
 	server.unusedSockets = removeSocket(server.unusedSockets, socket)
 	server.Unlock()
 	// Maybe just a timeout, but suggest a cluster sync up just in case.
