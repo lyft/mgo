@@ -38,10 +38,10 @@ import (
 
 type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
 
-type ScoketState int
+type SocketState uint8
 const (
-	Connecting = 1
-	Connected = 2
+	Connecting SocketState = iota
+	Connected
 )
 
 type mongoSocket struct {
@@ -60,7 +60,7 @@ type mongoSocket struct {
 	dead          error
 	serverInfo    *mongoServerInfo
 	expiryTime    *time.Time // time in future when this socket should be expired
-	socketState   ScoketState
+	socketState   SocketState
 }
 
 type queryOpFlags uint32
