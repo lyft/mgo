@@ -201,9 +201,7 @@ func (server *mongoServer) Connect(timeout time.Duration, socket *mongoSocket) e
 	var socketExpiryTime *time.Time
 	if server.maxSocketReuseTime != 0 {
 		duration := server.maxSocketReuseTime
-		randomSource := rand.NewSource(time.Now().UnixNano())
-		random := rand.New(randomSource)		
-		durationWithJitter := time.Duration(float64(duration) * (1 + random.Float64()*socketExpiryJitterAmount))
+		durationWithJitter := time.Duration(float64(duration) * (1 + rand.Float64()*socketExpiryJitterAmount))
 		expiryTime := time.Now().Add(durationWithJitter)
 		socketExpiryTime = &expiryTime
 	}
