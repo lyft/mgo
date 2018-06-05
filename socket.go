@@ -571,6 +571,10 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	}
 
 	socket.nextRequestId = requestId + 1
+	// request ID always start at 4th byte in payload according to
+	// mongodb wired protocol
+	// Although we could just use request IDs from original payload
+	// but better to just use own request IDs
 	setInt32(payload, 4, int32(requestId))
 
 	var wait, change sync.Mutex
