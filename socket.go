@@ -577,6 +577,14 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	// but better to just use own request IDs
 	setInt32(payload, 4, int32(requestId))
 
+	// Below synchronization code is copied from SimpleQuery
+	// replyFunc is executed as a callback when data is read back from socket
+	// after writing payload to socket. wait and change mutex's serve purpose of
+	// making sure that data is read from socket before copying data for return from buffer.
+	//
+	// wait mutex is captured in anonymous function. Anonymous function unlocks wait mutex
+	// after it has done copying data from callback parameters (socket response).
+	// Actual query function will wait until this exchange has happened.
 	var wait, change sync.Mutex
 	var replyDone bool
 	var replyData []byte
@@ -603,6 +611,8 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	socket.Unlock()
 
 	wait.Lock()
+	// Below locking of change mutex is redundent here, but keeping it same as in SimpleQuery
+	// where it's actually needed.
 	change.Lock()
 	data = replyData
 	err = replyErr
