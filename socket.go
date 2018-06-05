@@ -555,6 +555,58 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	return err
 }
 
+func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
+	// Buffer is ready for the pipe.  Lock, allocate ids, and enqueue.
+	socket.Lock()
+	if socket.dead != nil {
+		dead := socket.dead
+		socket.Unlock()
+		debugf("(QueryRaw)Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.Error())
+		return nil, dead
+	}
+
+	requestId := socket.nextRequestId + 1
+	if requestId == 0 {
+		requestId++
+	}
+
+	socket.nextRequestId = requestId + 1
+	setInt32(payload, 4, int32(requestId))
+
+	var wait, change sync.Mutex
+	var replyDone bool
+	var replyData []byte
+	var replyErr error
+	wait.Lock()
+	socket.replyFuncs[requestId] = func(err error, reply *replyOp, docNum int, docData []byte) {
+		change.Lock()
+		if !replyDone {
+			replyDone = true
+			replyErr = err
+			if err == nil {
+				replyData = docData
+			}
+		}
+		change.Unlock()
+		wait.Unlock()
+	}
+
+	debugf("(QueryRaw)Socket %p to %s: sending %d op(s) (%d bytes)", socket, socket.addr, 1, len(payload))
+	stats.sentOps(1)
+
+	socket.updateDeadline(writeDeadline)
+	_, err = socket.conn.Write(payload)
+	socket.Unlock()
+
+	wait.Lock()
+	change.Lock()
+	data = replyData
+	err = replyErr
+	change.Unlock()
+
+	return data, err
+}
+
 func fill(r net.Conn, b []byte) error {
 	l := len(b)
 	n, err := r.Read(b)
