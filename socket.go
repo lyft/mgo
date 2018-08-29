@@ -585,23 +585,23 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	// wait mutex is captured in anonymous function. Anonymous function unlocks wait mutex
 	// after it has done copying data from callback parameters (socket response).
 	// Actual query function will wait until this exchange has happened.
-	var wait, change sync.Mutex
-	var replyDone bool
-	var replyData []byte
-	var replyErr error
-	wait.Lock()
-	socket.replyFuncs[requestId] = func(err error, reply *replyOp, docNum int, docData []byte) {
-		change.Lock()
-		if !replyDone {
-			replyDone = true
-			replyErr = err
-			if err == nil {
-				replyData = docData
-			}
-		}
-		change.Unlock()
-		wait.Unlock()
-	}
+	//var wait, change sync.Mutex
+	//var replyDone bool
+	//var replyData []byte
+	//var replyErr error
+	//wait.Lock()
+	//socket.replyFuncs[requestId] = func(err error, reply *replyOp, docNum int, docData []byte) {
+	//	change.Lock()
+	//	if !replyDone {
+	//		replyDone = true
+	//		replyErr = err
+	//		if err == nil {
+	//			replyData = docData
+	//		}
+	//	}
+	//	change.Unlock()
+	//	wait.Unlock()
+	//}
 
 	debugf("(QueryRaw)Socket %p to %s: sending %d op(s) (%d bytes)", socket, socket.addr, 1, len(payload))
 	stats.sentOps(1)
@@ -610,13 +610,13 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	_, err = socket.conn.Write(payload)
 	socket.Unlock()
 
-	wait.Lock()
-	// Below locking of change mutex is redundent here, but keeping it same as in SimpleQuery
-	// where it's actually needed.
-	change.Lock()
-	data = replyData
-	err = replyErr
-	change.Unlock()
+	//wait.Lock()
+	//// Below locking of change mutex is redundent here, but keeping it same as in SimpleQuery
+	//// where it's actually needed.
+	//change.Lock()
+	//data = replyData
+	//err = replyErr
+	//change.Unlock()
 
 	return data, err
 }
