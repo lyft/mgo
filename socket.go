@@ -557,6 +557,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 
 func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	// Buffer is ready for the pipe.  Lock, allocate ids, and enqueue.
+	debugf("(QueryRaw)Socket %p to %s.", socket, socket.addr)
 	socket.Lock()
 	if socket.dead != nil {
 		dead := socket.dead
@@ -592,18 +593,36 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	wait.Lock()
 	socket.replyFuncs[requestId] = func(err error, reply *replyOp, docNum int, docData []byte) {
 		change.Lock()
-		if !replyDone {
+		shouldStop := false
+		if err != nil {
+			shouldStop = true
+		} else if reply == nil || reply.replyDocs == 0 {
+			shouldStop = true
+		} else if docNum == int(reply.replyDocs) - 1 {
+			// last document, no more replyFunc call expected.
+			shouldStop = true
+		}
+
+		if shouldStop && replyDone {
+			panic("Reply was already marked done.")
+		}
+
+		if err == nil && docData != nil && len(docData) >0 {
+			replyData = append(replyData, docData...)
+		}
+
+		if shouldStop {
 			replyDone = true
 			replyErr = err
-			if err == nil {
-				replyData = docData
-			}
 		}
+
 		change.Unlock()
-		wait.Unlock()
+		if shouldStop {
+			wait.Unlock()
+		}
 	}
 
-	debugf("(QueryRaw)Socket %p to %s: sending %d op(s) (%d bytes)", socket, socket.addr, 1, len(payload))
+	debugf("(QueryRaw)Socket %p to %s: sending %d op(s) (%d bytes) - RequestID: %d", socket, socket.addr, 1, len(payload), requestId)
 	stats.sentOps(1)
 
 	socket.updateDeadline(writeDeadline)
@@ -617,6 +636,8 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	data = replyData
 	err = replyErr
 	change.Unlock()
+
+	debugf("Socket.QueryRaw complete %p", socket)
 
 	return data, err
 }
@@ -651,7 +672,7 @@ func (socket *mongoSocket) readLoop() {
 
 		// Don't use socket.server.Addr here.  socket is not
 		// locked and socket.server may go away.
-		debugf("Socket %p to %s: got reply (%d bytes)", socket, socket.addr, totalLen)
+		debugf("Socket %p to %s: got reply (%d bytes) - Responseto: %d", socket, socket.addr, totalLen, responseTo)
 
 		_ = totalLen
 
@@ -676,7 +697,6 @@ func (socket *mongoSocket) readLoop() {
 			delete(socket.replyFuncs, uint32(responseTo))
 		}
 		socket.Unlock()
-
 		if replyFunc != nil && reply.replyDocs == 0 {
 			replyFunc(nil, &reply, -1, nil)
 		} else {
