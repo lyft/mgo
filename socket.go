@@ -333,10 +333,9 @@ func (socket *mongoSocket) Close() {
 }
 
 func (socket *mongoSocket) kill(err error, abend bool) {
-	defer deleteCallbacks(socket)
 	socket.Lock()
 	if socket.dead != nil {
-		debugf("Socket %p to %s: killed again: %s (previously: %s)", socket, socket.addr, err.Error(), socket.dead.Error())
+		logf("Socket %p to %s: killed again: %s (previously: %s)", socket, socket.addr, err.Error(), socket.dead.Error())
 		socket.Unlock()
 		return
 	}
@@ -556,70 +555,10 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	return err
 }
 
-// ********************************************
-// HACK HACK HACK HACK HACK HACK HACK HACK HACK
-// ********************************************
-// For some unknown reason putting callbaks in socket.replyFuncs lead to
-// socket timeouts, couldn't figure that out even after spending 2 days it
-// Keeping callbacks in a global map seem to be working, so implementing this workaround
-// for QueryRaw only.
-var callBacks = map[string]map[int32]replyFunc{}
-var callBacksMutex sync.Mutex
-
-func addCallBack(socket *mongoSocket, reqId int32, rf replyFunc) {
-	key := fmt.Sprintf("%p", socket)
-	callBacksMutex.Lock()
-	defer callBacksMutex.Unlock()
-	s, ok := callBacks[key]
-	if ok {
-		s[reqId] = rf
-	} else {
-		s := make(map[int32]replyFunc)
-		callBacks[key] = s
-		s[reqId] = rf
-	}
-}
-
-func getAndDeleteCallBack(socket *mongoSocket, reqId int32) replyFunc {
-	key := fmt.Sprintf("%p", socket)
-	callBacksMutex.Lock()
-	defer callBacksMutex.Unlock()
-
-	s, ok := callBacks[key]
-	if ok {
-		rf, ok := s[reqId]
-		if ok {
-			delete(s, reqId)
-		}
-		return rf
-	}
-	return nil
-}
-
-func getCallBacksCount(socket *mongoSocket) int {
-	key := fmt.Sprintf("%p", socket)
-	callBacksMutex.Lock()
-	defer callBacksMutex.Unlock()
-
-	s, ok := callBacks[key]
-	if ok {
-		return len(s)
-	}
-	return 0
-}
-
-func deleteCallbacks(socket *mongoSocket) {
-	key := fmt.Sprintf("%p", socket)
-	callBacksMutex.Lock()
-	defer callBacksMutex.Unlock()
-
-	delete(callBacks, key)
-}
-
 func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	// Buffer is ready for the pipe.  Lock, allocate ids, and enqueue.
-	debugf("(QueryRaw)Socket %p to %s.", socket, socket.addr)
 	socket.Lock()
+	debugf("(QueryRaw)Socket %p to %s.", socket, socket.addr)
 	if socket.dead != nil {
 		dead := socket.dead
 		socket.Unlock()
@@ -647,61 +586,41 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	// wait mutex is captured in anonymous function. Anonymous function unlocks wait mutex
 	// after it has done copying data from callback parameters (socket response).
 	// Actual query function will wait until this exchange has happened.
-	var wait sync.Mutex
-	var change sync.Mutex
-	var replyDone bool
+	//var wait sync.Mutex
+	//var change sync.Mutex
+	//var replyDone bool
 	var replyData []byte
 	var replyErr error
+
+	var wg sync.WaitGroup
+	wg.Add(1)
 
 	rf := func(err error, reply *replyOp, docNum int, docData []byte) {
 		docsCount := 0
 		if reply != nil {
 			docsCount = int(reply.replyDocs)
 		}
-		debugf("QueryRaw.ReplyFunc - Socket: %p, Error: %err, DocsCount: %d, DocNum: %d, RequestId: %d",
-			socket, err, docsCount, docNum, requestId)
-		change.Lock()
-		shouldStop := false
-		if err != nil {
-			shouldStop = true
-		} else if reply == nil || reply.replyDocs == 0 || docNum == -1 {
-			shouldStop = true
-		} else if docNum == int(reply.replyDocs) - 1 {
-			// last document, no more replyFunc call expected.
-			shouldStop = true
-		}
-
-		if shouldStop && replyDone {
-			panic("Reply was already marked done.")
-		}
-
-		if err == nil && docData != nil && len(docData) >0 {
-			replyData = append(replyData, docData...)
-		}
-
-		if shouldStop {
-			replyDone = true
+		debugf("QueryRaw.ReplyFunc - Socket: %p, Error: %s, DocsCount: %d, DocNum: %d, RequestId: %d", socket, err, docsCount, docNum, requestId)
+		if err != nil || docsCount == 0 || docNum == -1 || docNum == docsCount - 1{
+			debugf("All reply funcs done, mark query as done. Socket: %p, RequestID: %d", socket, requestId)
+			if docData != nil {
+				replyData = append(replyData, docData...)
+			}
 			replyErr = err
-		}
-
-		change.Unlock()
-		if shouldStop {
-
-			wait.Unlock()
+			wg.Done()
 		}
 	}
 
-	replyFuncsCount := getCallBacksCount(socket) + len(socket.replyFuncs)
+	replyFuncsCount := len(socket.replyFuncs)
 	wasWaiting := replyFuncsCount > 0
 
-	addCallBack(socket, int32(requestId), rf)
+	socket.replyFuncs[requestId] = rf
 
 	debugf("(QueryRaw)Socket %p to %s: sending %d op(s) (%d bytes) - RequestID: %d", socket, socket.addr, 1, len(payload), requestId)
 	stats.sentOps(1)
 
 	socket.updateDeadline(writeDeadline)
 
-	wait.Lock()
 	_, err = socket.conn.Write(payload)
 	if !wasWaiting {
 		debugf("Socket.QueryRaw UpdateReadDeadline  %p, RequestID:%d", socket, requestId)
@@ -709,17 +628,9 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	}
 	socket.Unlock()
 
-	// now wait until reply handlers are called for this query.
-	// last reply handler will unlock wait
-	wait.Lock()
-	defer wait.Unlock()
-	// Below locking of change mutex is redundent here, but keeping it same as in SimpleQuery
-	// where it's actually needed.
-	change.Lock()
+	wg.Wait()
 	data = replyData
 	err = replyErr
-	change.Unlock()
-
 	debugf("Socket.QueryRaw complete %p, RequestID:%d, Error: %s", socket, requestId, err)
 	return data, err
 }
@@ -742,7 +653,7 @@ func (socket *mongoSocket) readLoop() {
 	s := make([]byte, 4)
 	conn := socket.conn // No locking, conn never changes.
 	for {
-		debugf("Socket %p ReplyFuncs: %d", socket, len(socket.replyFuncs))
+		logf("Socket %p ReplyFuncs: %d", socket, len(socket.replyFuncs))
 		err := fill(conn, p)
 		if err != nil {
 			debugf("Killing socket: %p because of error: %v", socket, err)
@@ -756,7 +667,7 @@ func (socket *mongoSocket) readLoop() {
 
 		// Don't use socket.server.Addr here.  socket is not
 		// locked and socket.server may go away.
-		debugf("Socket %p to %s: got reply (%d bytes) - Responseto: %d", socket, socket.addr, totalLen, responseTo)
+		logf("Socket %p to %s: got reply (%d bytes) - Responseto: %d", socket, socket.addr, totalLen, responseTo)
 
 		_ = totalLen
 
@@ -782,10 +693,6 @@ func (socket *mongoSocket) readLoop() {
 		}
 		socket.Unlock()
 
-		if replyFunc == nil {
-			// try getting replyHandler for raw queries.
-			replyFunc = getAndDeleteCallBack(socket, int32(responseTo))
-		}
 		if replyFunc != nil && reply.replyDocs == 0 {
 			replyFunc(nil, &reply, -1, nil)
 		} else {
