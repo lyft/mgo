@@ -644,7 +644,7 @@ func (socket *mongoSocket) readLoop() {
 	s := make([]byte, 4)
 	conn := socket.conn // No locking, conn never changes.
 	for {
-		logf("Socket %p ReplyFuncs: %d", socket, len(socket.replyFuncs))
+		debugf("Socket %p ReplyFuncs: %d", socket, len(socket.replyFuncs))
 		err := fill(conn, p)
 		if err != nil {
 			debugf("Killing socket: %p because of error: %v", socket, err)
