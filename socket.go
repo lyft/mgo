@@ -657,7 +657,7 @@ func (socket *mongoSocket) readLoop() {
 
 		// Don't use socket.server.Addr here.  socket is not
 		// locked and socket.server may go away.
-		logf("Socket %p to %s: got reply (%d bytes) - Responseto: %d", socket, socket.addr, totalLen, responseTo)
+		debugf("Socket %p to %s: got reply (%d bytes) - Responseto: %d", socket, socket.addr, totalLen, responseTo)
 
 		_ = totalLen
 
