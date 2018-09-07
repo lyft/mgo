@@ -335,7 +335,7 @@ func (socket *mongoSocket) Close() {
 func (socket *mongoSocket) kill(err error, abend bool) {
 	socket.Lock()
 	if socket.dead != nil {
-		logf("Socket %p to %s: killed again: %s (previously: %s)", socket, socket.addr, err.Error(), socket.dead.Error())
+		debugf("Socket %p to %s: killed again: %s (previously: %s)", socket, socket.addr, err.Error(), socket.dead.Error())
 		socket.Unlock()
 		return
 	}
