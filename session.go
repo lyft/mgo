@@ -692,14 +692,35 @@ func (db *Database) Run(cmd interface{}, result interface{}) error {
 //
 //     https://docs.mongodb.com/manual/reference/mongodb-wire-protocol
 //
-func (db *Database) RunRaw(payload []byte) (reply []byte, err error) {
+type RunRawReply struct {
+	MessageLength int32
+	RequestID     int32
+	ResponseTo    int32
+	OpCode        int32
+	ResponseFlags  int32
+	CursorID       int64
+	StartingFrom   int32
+	NumberReturned int32
+	Documents      [][]byte
+}
+
+func (db *Database) RunRaw(payload []byte) (reply RunRawReply, err error) {
 	socket, err := db.Session.acquireSocket(true)
 	if err != nil {
-		return nil, err
+		return RunRawReply{}, err
 	}
 	defer socket.Release()
 
 	return socket.QueryRaw(payload)
+}
+
+func (db *Database) KillCursor(cursorId int64) error {
+	socket, err := db.Session.acquireSocket(true)
+	defer socket.Release()
+	if err == nil {
+		err = socket.Query(&killCursorsOp{[]int64{cursorId}})
+	}
+	return err
 }
 
 // Credential holds details to authenticate with a MongoDB server.

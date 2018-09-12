@@ -555,14 +555,15 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	return err
 }
 
-func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
+func (socket *mongoSocket) QueryRaw(payload []byte) (reply RunRawReply, err error) {
 	// Buffer is ready for the pipe.  Lock, allocate ids, and enqueue.
+	debugf("(QueryRaw)Socket %p to %s.", socket, socket.addr)
 	socket.Lock()
 	if socket.dead != nil {
 		dead := socket.dead
 		socket.Unlock()
 		debugf("(QueryRaw)Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.Error())
-		return nil, dead
+		return RunRawReply{}, dead
 	}
 
 	requestId := socket.nextRequestId + 1
@@ -587,23 +588,50 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	// Actual query function will wait until this exchange has happened.
 	var wait, change sync.Mutex
 	var replyDone bool
-	var replyData []byte
 	var replyErr error
+	var queryReply RunRawReply
 	wait.Lock()
 	socket.replyFuncs[requestId] = func(err error, reply *replyOp, docNum int, docData []byte) {
 		change.Lock()
-		if !replyDone {
+		shouldStop := false
+		if err != nil {
+			shouldStop = true
+		} else if reply == nil || reply.replyDocs == 0 {
+			shouldStop = true
+		} else if docNum == int(reply.replyDocs) - 1 {
+			// last document, no more replyFunc call expected.
+			shouldStop = true
+		}
+
+		if shouldStop && replyDone {
+			panic("Reply was already marked done.")
+		}
+
+		if shouldStop {
+			if reply != nil {
+				queryReply.CursorID = reply.cursorId
+				queryReply.OpCode = 1
+				queryReply.ResponseFlags = int32(reply.flags)
+				queryReply.StartingFrom = reply.firstDoc
+				queryReply.NumberReturned = reply.replyDocs
+				queryReply.MessageLength = 36 // for above mentioned fields
+			}
+
 			replyDone = true
 			replyErr = err
-			if err == nil {
-				replyData = docData
-			}
 		}
+
+		if err == nil && docData != nil && len(docData) >0 {
+			queryReply.Documents = append(queryReply.Documents, docData)
+		}
+
 		change.Unlock()
-		wait.Unlock()
+		if shouldStop {
+			wait.Unlock()
+		}
 	}
 
-	debugf("(QueryRaw)Socket %p to %s: sending %d op(s) (%d bytes)", socket, socket.addr, 1, len(payload))
+	debugf("(QueryRaw)Socket %p to %s: sending %d op(s) (%d bytes) - RequestID: %d", socket, socket.addr, 1, len(payload), requestId)
 	stats.sentOps(1)
 
 	socket.updateDeadline(writeDeadline)
@@ -611,14 +639,11 @@ func (socket *mongoSocket) QueryRaw(payload []byte) (data []byte, err error) {
 	socket.Unlock()
 
 	wait.Lock()
-	// Below locking of change mutex is redundent here, but keeping it same as in SimpleQuery
-	// where it's actually needed.
-	change.Lock()
-	data = replyData
-	err = replyErr
-	change.Unlock()
+	defer wait.Unlock()
 
-	return data, err
+	debugf("Socket.QueryRaw complete %p", socket)
+
+	return queryReply, err
 }
 
 func fill(r net.Conn, b []byte) error {
@@ -651,7 +676,7 @@ func (socket *mongoSocket) readLoop() {
 
 		// Don't use socket.server.Addr here.  socket is not
 		// locked and socket.server may go away.
-		debugf("Socket %p to %s: got reply (%d bytes)", socket, socket.addr, totalLen)
+		debugf("Socket %p to %s: got reply (%d bytes) - Responseto: %d", socket, socket.addr, totalLen, responseTo)
 
 		_ = totalLen
 
@@ -676,7 +701,6 @@ func (socket *mongoSocket) readLoop() {
 			delete(socket.replyFuncs, uint32(responseTo))
 		}
 		socket.Unlock()
-
 		if replyFunc != nil && reply.replyDocs == 0 {
 			replyFunc(nil, &reply, -1, nil)
 		} else {
