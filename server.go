@@ -141,7 +141,8 @@ func (server *mongoServer) AcquireSocket(poolLimit int, minPoolSize int, timeout
 				socketState: Connecting,
 			}
 			// hold our spot in the liveSockets slice
-			server.liveSockets = append(server.liveSockets, socket)
+			server.liveSockets = append(server.liveSockets, nil)
+			replaceIdx := len(server.liveSockets) - 1
 			server.Unlock()
 			// release server lock so we can initiate concurrent connections to mongodb
 			err = server.Connect(timeout, socket)
@@ -155,11 +156,15 @@ func (server *mongoServer) AcquireSocket(poolLimit int, minPoolSize int, timeout
 					socket.Close()
 					return nil, abended, errServerClosed
 				}
+				// Replace the nil placeholder with the new socket
+				server.liveSockets[replaceIdx] = socket
 				server.Unlock()
 			} else {
 				// couldn't open connection to mongodb, releasing spot in liveSockets
 				server.Lock()
-				server.liveSockets = removeSocket(server.liveSockets, socket)
+				// remove the nil placeholder
+				copy(server.liveSockets[replaceIdx:], server.liveSockets[replaceIdx+1:])
+				server.liveSockets = server.liveSockets[:len(server.liveSockets)-1]
 				server.Unlock()
 			}
 		}
@@ -238,7 +243,9 @@ func (server *mongoServer) Close() {
 	server.Unlock()
 	logf("Connections to %s closing (%d live sockets).", server.Addr, len(liveSockets))
 	for i, s := range liveSockets {
-		s.Close()
+		if s != nil {
+			s.Close()
+		}
 		liveSockets[i] = nil
 	}
 	for i := range unusedSockets {
