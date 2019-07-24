@@ -142,7 +142,6 @@ func (server *mongoServer) AcquireSocket(poolLimit int, minPoolSize int, timeout
 			}
 			// hold our spot in the liveSockets slice
 			server.liveSockets = append(server.liveSockets, nil)
-			replaceIdx := len(server.liveSockets) - 1
 			server.Unlock()
 			// release server lock so we can initiate concurrent connections to mongodb
 			err = server.Connect(timeout, socket)
@@ -156,15 +155,20 @@ func (server *mongoServer) AcquireSocket(poolLimit int, minPoolSize int, timeout
 					socket.Close()
 					return nil, abended, errServerClosed
 				}
-				// Replace the nil placeholder with the new socket
-				server.liveSockets[replaceIdx] = socket
+				// replace the nil placeholder with the new socket,
+				// it does not matter which nil-placeholder we replace
+				for i, s := range server.liveSockets {
+					if s == nil {
+						server.liveSockets[i] = socket
+						break
+					}
+				}
 				server.Unlock()
 			} else {
 				// couldn't open connection to mongodb, releasing spot in liveSockets
 				server.Lock()
-				// remove the nil placeholder
-				copy(server.liveSockets[replaceIdx:], server.liveSockets[replaceIdx+1:])
-				server.liveSockets = server.liveSockets[:len(server.liveSockets)-1]
+				// remove the nil placeholder, it does not matter which one
+				server.liveSockets = removeSocket(server.liveSockets, nil)
 				server.Unlock()
 			}
 		}
