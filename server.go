@@ -143,7 +143,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, minPoolSize int, timeout
 				socketState: Connecting,
 			}
 			// hold a spot in the liveSockets slice to ensure connecting sockets are counted
-			// against the total connection cap.
+			// against the pool limit.
 			server.liveSockets = append(server.liveSockets, nil)
 			server.Unlock()
 			// release server lock so we can initiate concurrent connections to mongodb
