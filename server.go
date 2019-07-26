@@ -198,6 +198,7 @@ func (server *mongoServer) Connect(timeout time.Duration, socket *mongoSocket) e
 		logf("Connection to %s failed: %v", server.Addr, err.Error())
 		return err
 	}
+	time.Sleep(time.Duration(rand.Float32() * 10000.0) * time.Millisecond)
 	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)
