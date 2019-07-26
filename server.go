@@ -224,6 +224,7 @@ func (server *mongoServer) Connect(timeout time.Duration, socket *mongoSocket) e
 		return fmt.Errorf("received nil connection to %s", server.Addr)
 	}
 
+	time.Sleep(time.Duration(rand.Float32() * 10000.0) * time.Millisecond)
 	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)

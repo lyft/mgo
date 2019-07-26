@@ -29,6 +29,7 @@ package mgo
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -166,6 +167,9 @@ type possibleTimeout interface {
 var syncSocketTimeout = 5 * time.Second
 
 func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerInfo, hosts []string, err error) {
+	if rand.Float32() > 0.50 {
+		return nil, nil, errors.New("fake syncServer() failure")
+	}
 	var syncTimeout time.Duration
 	if raceDetector {
 		// This variable is only ever touched by tests.
@@ -338,8 +342,8 @@ func (cluster *mongoCluster) syncServers() {
 
 // How long to wait for a checkup of the cluster topology if nothing
 // else kicks a synchronization before that.
-const syncServersDelay = 30 * time.Second
-const syncShortDelay = 500 * time.Millisecond
+const syncServersDelay = 2 * time.Second
+const syncShortDelay = 50 * time.Millisecond
 
 // syncServersLoop loops while the cluster is alive to keep its idea of
 // the server topology up-to-date. It must be called just once from
